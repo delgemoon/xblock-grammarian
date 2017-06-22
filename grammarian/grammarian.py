@@ -10,11 +10,13 @@ from __future__ import unicode_literals
 import jinja2
 from xblock import fields
 from xblock.core import XBlock
+from xblock.exceptions import JsonHandlerError
 from xblock.fields import Scope
 from xblock.fragment import Fragment
-
+from xblockutils.studio_editable import StudioEditableXBlockMixin
 from .utils import split_sentence_into_parts
-
+from xblock.validation import ValidationMessage
+from xmodule.validation import StudioValidationMessage, StudioValidation
 
 template_engine = jinja2.Environment(loader=jinja2.PackageLoader('grammarian'))
 
@@ -24,7 +26,7 @@ def _(text):
     return text
 
 
-class GrammarianXBlock(XBlock):
+class GrammarianXBlock(StudioEditableXBlockMixin, XBlock):
     """
     Implements the Grammarian XBlock
     """
@@ -61,6 +63,15 @@ class GrammarianXBlock(XBlock):
         scope=Scope.settings,
         default=_("What [affect] has it had on your life?"),
     )
+    question = fields.String(
+        display_name=_("Question automating!!!!"),
+        help=_(
+            "Here is the patch for the teacher input the gherkin template."
+            ),
+        scope=Scope.content,
+        default = "",
+        multiline_editor= True,
+    )
 
     # User state:
     part_selected = fields.Integer(
@@ -77,6 +88,7 @@ class GrammarianXBlock(XBlock):
     ############################################################################################
 
     has_score = True
+    editable_fields = ('display_name', 'instructions', 'text','question')
 
     ############################################################################################
     # Helpful properties and methods
@@ -124,6 +136,21 @@ class GrammarianXBlock(XBlock):
     # Views
     ############################################################################################
 
+    def validate_field_data(self, validation, data):
+        """""
+        Ask this xblock to validate itself.
+        XBlock subclass are expected to override this method. Any overiding method should call super() to collect 
+        validation results from its superclass, and then add any additional results as necesary.
+        """""
+        super(GrammarianXBlock, self).validate_field_data(validation, data)
+        def add_error(msg):
+            validation.add(ValidationMessage(ValidationMessage.ERROR, msg))
+        unused_parts, wrong_index = split_sentence_into_parts(data.text)
+        question = data.question
+        print "Tammd wants to know the question is : \n" + question
+        if wrong_index is None:
+            add_error("You must indicate part of the text that is wrong by surroding it with [square brackets].")
+
     def student_view(self, context):
         """
         The main view of this XBlock.
@@ -153,7 +180,11 @@ class GrammarianXBlock(XBlock):
         """
         Get the state of this XBlock - i.e. all the user-specific data
         """
+        if self.student_has_answered:
+            raise JsonHandlerError(400, "This student already answered.")
         part_index = data.get("part_index")
+        if part_index not in range(0, len(self.text_parts)):
+            raise JsonHandlerError(400, "Invalid part_index.")
 
         # Save the student's selection:
         self.part_selected = part_index
@@ -163,3 +194,8 @@ class GrammarianXBlock(XBlock):
     ############################################################################################
     # Misc
     ############################################################################################
+    @staticmethod
+    def workbench_scenarios():
+	return [ 
+		("Grammarian default Scenarios" , "<grammarian/>"),
+	]
